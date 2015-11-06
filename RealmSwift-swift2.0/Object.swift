@@ -178,19 +178,18 @@ public class Object: RLMObjectBase {
     public subscript(key: String) -> AnyObject? {
         get {
             if realm == nil {
-                return self.valueForKey(key)
+                return valueForKey(key)
             }
             let property = RLMValidatedGetProperty(self, key)
             if property.type == .Array {
-                return self.listForProperty(property)
+                return listForProperty(property)
             }
             return RLMDynamicGet(self, property)
         }
         set(value) {
             if realm == nil {
-                self.setValue(value, forKey: key)
-            }
-            else {
+                setValue(value, forKey: key)
+            } else {
                 RLMDynamicValidatedSet(self, key, value)
             }
         }
@@ -316,7 +315,8 @@ public class ObjectUtil: NSObject {
     }
 
     @objc private class func getOptionalProperties(object: AnyObject) -> NSDictionary {
-        return Mirror(reflecting: object).children.reduce([String:AnyObject]()) { (var properties: [String:AnyObject], prop: Mirror.Child) in
+        let children = Mirror(reflecting: object).children
+        return children.reduce([String: AnyObject]()) { (var properties: [String:AnyObject], prop: Mirror.Child) in
             guard let name = prop.label else { return properties }
             let mirror = Mirror(reflecting: prop.value)
             let type = mirror.subjectType
