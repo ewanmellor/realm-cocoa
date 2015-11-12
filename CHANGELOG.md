@@ -13,6 +13,8 @@ x.x.x Release notes (yyyy-MM-dd)
 
 ### Bugfixes
 
+* Throw an exception when querying on a link providing objects, which are from a different Realm.
+* Return empty results when querying on a link providing an unattached object.
 * Fix crashes or incorrect results when calling `-[RLMRealm refresh]` during
   fast enumeration.
 * Add `Int8` support for `RealmOptional`, `MinMaxType` and `AddableType`.
