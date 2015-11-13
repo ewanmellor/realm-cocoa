@@ -23,8 +23,8 @@
 #import "RLMAccessor.h"
 #import "RLMObjectSchema_Private.hpp"
 #import "RLMProperty_Private.h"
+#import "RLMRealmConfiguration_Private.h"
 #import "RLMRealm_Dynamic.h"
-#import "RLMSchema_Private.h"
 #import "RLMSchema_Private.h"
 
 #import <algorithm>
@@ -477,6 +477,44 @@ RLM_ARRAY_TYPE(SchemaTestClassSecondChild)
     RLMAssertThrowsWithReasonMatching([RLMObjectSchema schemaForObjectClass:InvalidNSNumberNoProtocolObject.class], @"NSNumber properties require a protocol defining the contained type");
 }
 
+#if 0
+- (void)testOpeningFileWithDifferentClassSubsetsInDifferentThreads {
+    RLMRealmConfiguration *config = [RLMRealmConfiguration new];
+    config.objectClasses = @[IntObject.class];
+
+    RLMRealm *realm = [RLMRealm realmWithConfiguration:config error:nil];
+    XCTAssertEqual(1U, realm.schema.objectSchema.count);
+
+    [realm beginWriteTransaction];
+    [IntObject createInRealm:realm withValue:@[@1]];
+    [realm commitWriteTransaction];
+
+    [self dispatchAsyncAndWait:^{
+        RLMRealmConfiguration *config = [RLMRealmConfiguration new];
+        config.objectClasses = @[StringObject.class];
+
+        RLMRealm *realm = [RLMRealm realmWithConfiguration:config error:nil];
+        XCTAssertEqual(1U, realm.schema.objectSchema.count);
+
+        // Verify that the StringObject table actually exists
+        [realm beginWriteTransaction];
+        [StringObject createInRealm:realm withValue:@[@""]];
+        [realm commitWriteTransaction];
+    }];
+
+    // Should be able to advance over the transaction creating a new table and
+    // inserting a row into it
+    XCTAssertNoThrow([realm refresh]);
+
+    // Verify that the IntObject table didn't break
+    XCTAssertEqual(1, [[IntObject allObjectsInRealm:realm].firstObject intCol]);
+    [realm beginWriteTransaction];
+    [IntObject createInRealm:realm withValue:@[@2]];
+    [StringObject createInRealm:realm withValue:@[@""]];
+    [realm commitWriteTransaction];
+}
+#endif
+
 // Can't spawn child processes on iOS
 #if !TARGET_OS_IPHONE && !TARGET_IPHONE_SIMULATOR
 - (void)testPartialSharedSchemaInit {
@@ -485,7 +523,7 @@ RLM_ARRAY_TYPE(SchemaTestClassSecondChild)
         return;
     }
 
-    RLMRealmConfiguration *config = [RLMRealmConfiguration new];
+    RLMRealmConfiguration *config = [RLMRealmConfiguration defaultConfiguration];
 
     // Verify that opening with class subsets without the shared schema being
     // initialized works
@@ -517,6 +555,139 @@ RLM_ARRAY_TYPE(SchemaTestClassSecondChild)
         XCTAssertEqual(realm.schema.objectSchema.count,
                        [NSSet setWithArray:[realm.schema.objectSchema valueForKey:@"className"]].count);
     }
+}
+
+- (void)testOpeningFileWithDifferentClassSubsetsInDifferentProcesses {
+    if (!self.isParent) {
+        RLMRealmConfiguration *config = [RLMRealmConfiguration defaultConfiguration];
+        config.objectClasses = @[StringObject.class];
+
+        RLMRealm *realm = [RLMRealm realmWithConfiguration:config error:nil];
+        XCTAssertEqual(1U, realm.schema.objectSchema.count);
+
+        // Verify that the StringObject table actually exists
+        [realm beginWriteTransaction];
+        [StringObject createInRealm:realm withValue:@[@""]];
+        [realm commitWriteTransaction];
+        return;
+    }
+
+    RLMRealmConfiguration *config = [RLMRealmConfiguration defaultConfiguration];
+    config.objectClasses = @[IntObject.class];
+
+    RLMRealm *realm = [RLMRealm realmWithConfiguration:config error:nil];
+    realm.autorefresh = false;
+    XCTAssertEqual(1U, realm.schema.objectSchema.count);
+
+    [realm beginWriteTransaction];
+    [IntObject createInRealm:realm withValue:@[@1]];
+    [realm commitWriteTransaction];
+
+    RLMRunChildAndWait();
+
+    // Should be able to advance over the transaction creating a new table and
+    // inserting a row into it
+    XCTAssertNoThrow([realm refresh]);
+
+    // Verify that the IntObject table didn't break
+    XCTAssertEqual(1, [[IntObject allObjectsInRealm:realm].firstObject intCol]);
+    [realm beginWriteTransaction];
+    [IntObject createInRealm:realm withValue:@[@2]];
+
+    // StringObject still isn't usable in this process since it isn't in the
+    // class subset
+    XCTAssertThrows([StringObject createInRealm:realm withValue:@[@""]]);
+    [realm commitWriteTransaction];
+}
+
+- (void)testAddingIndexToExistingColumnInBackgroundProcess {
+    if (!self.isParent) {
+        RLMSchema *schema = [RLMSchema schemaWithObjectClasses:@[IntObject.class]];
+        schema.objectSchema[0].properties[0].indexed = YES;
+
+        RLMRealmConfiguration *config = [RLMRealmConfiguration defaultConfiguration];
+        config.customSchema = schema;
+        [RLMRealm realmWithConfiguration:config error:nil];
+        return;
+    }
+
+    RLMRealmConfiguration *config = [RLMRealmConfiguration defaultConfiguration];
+    config.objectClasses = @[IntObject.class];
+
+    RLMRealm *realm = [RLMRealm realmWithConfiguration:config error:nil];
+    realm.autorefresh = false;
+    XCTAssertEqual(1U, realm.schema.objectSchema.count);
+
+    // Insert a value to ensure stuff actually happens when the index is added/removed
+    [realm beginWriteTransaction];
+    [IntObject createInRealm:realm withValue:@[@1]];
+    [realm commitWriteTransaction];
+
+    RLMRunChildAndWait();
+
+    // Should accept the index change
+    XCTAssertNoThrow([realm refresh]);
+}
+
+- (void)testRemovingIndexFromExistingColumnInBackgroundProcess {
+    if (!self.isParent) {
+        RLMSchema *schema = [RLMSchema schemaWithObjectClasses:@[IndexedStringObject.class]];
+        schema.objectSchema[0].properties[0].indexed = NO;
+
+        RLMRealmConfiguration *config = [RLMRealmConfiguration defaultConfiguration];
+        config.customSchema = schema;
+        [RLMRealm realmWithConfiguration:config error:nil];
+        return;
+    }
+
+    RLMRealmConfiguration *config = [RLMRealmConfiguration defaultConfiguration];
+    config.objectClasses = @[IndexedStringObject.class];
+
+    RLMRealm *realm = [RLMRealm realmWithConfiguration:config error:nil];
+    realm.autorefresh = false;
+    XCTAssertEqual(1U, realm.schema.objectSchema.count);
+
+    // Insert a value to ensure stuff actually happens when the index is added/removed
+    [realm beginWriteTransaction];
+    [IndexedStringObject createInRealm:realm withValue:@[@"1"]];
+    [realm commitWriteTransaction];
+
+    RLMRunChildAndWait();
+
+    // Should accept the index change
+    XCTAssertNoThrow([realm refresh]);
+}
+
+- (void)testMigratingToLaterVersionInBackgroundProcess {
+    if (!self.isParent) {
+        RLMSchema *schema = [RLMSchema schemaWithObjectClasses:@[IntObject.class]];
+        schema.objectSchema[0].properties[0].type = RLMPropertyTypeFloat;
+
+        RLMRealmConfiguration *config = [RLMRealmConfiguration defaultConfiguration];
+        config.customSchema = schema;
+        config.schemaVersion = 1;
+        [RLMRealm realmWithConfiguration:config error:nil];
+        return;
+    }
+
+    RLMRealmConfiguration *config = [RLMRealmConfiguration defaultConfiguration];
+    config.objectClasses = @[IntObject.class];
+
+    RLMRealm *realm = [RLMRealm realmWithConfiguration:config error:nil];
+    realm.autorefresh = false;
+    [realm beginWriteTransaction];
+    [IntObject createInRealm:realm withValue:@[@1]];
+    [realm commitWriteTransaction];
+
+    RLMRunChildAndWait();
+
+    // Should fail to refresh since we can't use later versions of the file due
+    // to the schema change
+    XCTAssertThrows([realm refresh]);
+    XCTAssertThrows([realm beginWriteTransaction]);
+
+    // Should have been left in a sensible state after the errors
+    XCTAssertEqual(1, [[IntObject allObjectsInRealm:realm].firstObject intCol]);
 }
 #endif
 
