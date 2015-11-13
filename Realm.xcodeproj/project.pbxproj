@@ -1145,6 +1145,7 @@
 				5D660FD41BE98C7C0021E04F /* Sources */,
 				5D660FD51BE98C7C0021E04F /* Frameworks */,
 				5D66102D1BE98E360021E04F /* Embed Frameworks */,
+				E81B01FF1BF664B700A41452 /* Exit After Building Tests If Requested */,
 			);
 			buildRules = (
 			);
@@ -1282,7 +1283,6 @@
 			files = (
 				5D659ED21BE04556006515A0 /* CHANGELOG.md in Resources */,
 				5D659ED51BE04556006515A0 /* LICENSE in Resources */,
-				5D660FC31BE98BEF0021E04F /* RealmSwift.xcconfig in Resources */,
 				5D6157051BE13CBB00A4BD3F /* strip-frameworks.sh in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1458,6 +1458,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "sh build.sh set-swift-version";
+		};
+		E81B01FF1BF664B700A41452 /* Exit After Building Tests If Requested */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Exit After Building Tests If Requested";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [[ $REALM_EXIT_AFTER_BUILDING_TESTS == \"YES\" ]]; then\n    echo \"Exiting as requested.\"\n    exit 1\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
