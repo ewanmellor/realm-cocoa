@@ -611,6 +611,8 @@ case "$COMMAND" in
         sh build.sh verify-ios-device-swift
         sh build.sh verify-watchos
         sh build.sh verify-tvos
+        sh build.sh verify-tvos-debug
+        sh build.sh verify-tvos-device
         ;;
 
     "verify-cocoapods")
