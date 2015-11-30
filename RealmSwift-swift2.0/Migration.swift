@@ -52,7 +52,8 @@ Get the schema version for a Realm at a given path.
 
 - returns: The version of the Realm at `realmPath` or `nil` if the version cannot be read.
 */
-public func schemaVersionAtPath(realmPath: String, encryptionKey: NSData? = nil, error: NSErrorPointer = nil) -> UInt64? {
+public func schemaVersionAtPath(realmPath: String, encryptionKey: NSData? = nil,
+                                error: NSErrorPointer = nil) -> UInt64? {
     let version = RLMRealm.schemaVersionAtPath(realmPath, encryptionKey: encryptionKey, error: error)
     if version == RLMNotVersioned {
         return nil
@@ -109,7 +110,8 @@ public final class Migration {
     */
     public func enumerate(objectClassName: String, _ block: MigrationObjectEnumerateBlock) {
         rlmMigration.enumerateObjects(objectClassName) {
-            block(oldObject: unsafeBitCast($0, MigrationObject.self), newObject: unsafeBitCast($1, MigrationObject.self))
+            block(oldObject: unsafeBitCast($0, MigrationObject.self),
+                  newObject: unsafeBitCast($1, MigrationObject.self))
         }
     }
 
@@ -164,18 +166,14 @@ internal func accessorMigrationBlock(migrationBlock: MigrationBlock) -> RLMMigra
     return { migration, oldVersion in
         // set all accessor classes to MigrationObject
         for objectSchema in migration.oldSchema.objectSchema {
-            if let objectSchema = objectSchema as? RLMObjectSchema {
-                objectSchema.accessorClass = MigrationObject.self
-                // isSwiftClass is always `false` for object schema generated
-                // from the table, but we need to pretend it's from a swift class
-                // (even if it isn't) for the accessors to be initialized correctly.
-                objectSchema.isSwiftClass = true
-            }
+            objectSchema.accessorClass = MigrationObject.self
+            // isSwiftClass is always `false` for object schema generated
+            // from the table, but we need to pretend it's from a swift class
+            // (even if it isn't) for the accessors to be initialized correctly.
+            objectSchema.isSwiftClass = true
         }
         for objectSchema in migration.newSchema.objectSchema {
-            if let objectSchema = objectSchema as? RLMObjectSchema {
-                objectSchema.accessorClass = MigrationObject.self
-            }
+            objectSchema.accessorClass = MigrationObject.self
         }
 
         // run migration

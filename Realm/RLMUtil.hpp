@@ -34,12 +34,17 @@ namespace realm {
 @class RLMProperty;
 @protocol RLMFastEnumerable;
 
+namespace realm {
+    class RealmFileException;
+}
+
 __attribute__((format(NSString, 1, 2)))
 NSException *RLMException(NSString *fmt, ...);
 NSException *RLMException(std::exception const& exception);
 
 NSError *RLMMakeError(RLMError code, std::exception const& exception);
 NSError *RLMMakeError(RLMError code, const realm::util::File::AccessError&);
+NSError *RLMMakeError(RLMError code, const realm::RealmFileException&);
 NSError *RLMMakeError(std::system_error const& exception);
 NSError *RLMMakeError(NSException *exception);
 
@@ -57,6 +62,8 @@ NSArray *RLMCollectionValueForKey(id<RLMFastEnumerable> collection, NSString *ke
 void RLMCollectionSetValueForKey(id<RLMFastEnumerable> collection, NSString *key, id value);
 
 BOOL RLMIsDebuggerAttached();
+
+BOOL RLMIsInRunLoop();
 
 // C version of isKindOfClass
 static inline BOOL RLMIsKindOfClass(Class class1, Class class2) {

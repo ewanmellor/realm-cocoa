@@ -48,6 +48,7 @@ namespace realm {
             bool read_only = false;
             bool in_memory = false;
             bool cache = true;
+            bool disable_format_upgrade = false;
             std::vector<char> encryption_key;
 
             std::unique_ptr<Schema> schema;
@@ -77,8 +78,7 @@ namespace realm {
         // updating indexes as necessary. Uses the existing migration function
         // on the Config, and the resulting Schema and version with updated
         // column mappings are set on the realms config upon success.
-        // returns if any changes were made
-        bool update_schema(std::unique_ptr<Schema> schema, uint64_t version);
+        void update_schema(std::unique_ptr<Schema> schema, uint64_t version);
 
         static uint64_t get_schema_version(Config const& config);
 
@@ -153,7 +153,7 @@ namespace realm {
             /** Thrown if the user does not have permission to open or create
              the specified file in the specified access mode when the realm is opened. */
             PermissionDenied,
-            /** Thrown if no_create was specified and the file did already exist when the realm is opened. */
+            /** Thrown if create_Always was specified and the file did already exist when the realm is opened. */
             Exists,
             /** Thrown if no_create was specified and the file was not found when the realm is opened. */
             NotFound,
@@ -161,12 +161,17 @@ namespace realm {
              process which cannot share with the current process due to an
              architecture mismatch. */
             IncompatibleLockFile,
+            /** Thrown if the file needs to be upgraded to a new format, but upgrades have been explicitly disabled. */
+            FormatUpgradeRequired,
         };
-        RealmFileException(Kind kind, std::string message) : std::runtime_error(message), m_kind(kind) {}
+        RealmFileException(Kind kind, std::string path, std::string message) :
+            std::runtime_error(std::move(message)), m_kind(kind), m_path(std::move(path)) {}
         Kind kind() const { return m_kind; }
+        const std::string& path() const { return m_path; }
         
     private:
         Kind m_kind;
+        std::string m_path;
     };
 
     class MismatchedConfigException : public std::runtime_error {

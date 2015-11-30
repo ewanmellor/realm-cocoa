@@ -273,6 +273,14 @@ NSError *RLMMakeError(RLMError code, const realm::util::File::AccessError& excep
                                       @"Error Code": @(code)}];
 }
 
+NSError *RLMMakeError(RLMError code, const realm::RealmFileException& exception) {
+    return [NSError errorWithDomain:RLMErrorDomain
+                               code:code
+                           userInfo:@{NSLocalizedDescriptionKey: @(exception.what()),
+                                      NSFilePathErrorKey: @(exception.path().c_str()),
+                                      @"Error Code": @(code)}];
+}
+
 NSError *RLMMakeError(std::system_error const& exception) {
     return [NSError errorWithDomain:RLMErrorDomain
                                code:exception.code().value()
@@ -307,12 +315,6 @@ BOOL RLMIsObjectSubclass(Class klass) {
 
 BOOL RLMIsDebuggerAttached()
 {
-    // NOTE: Debugger checks are a workaround for LLDB hangs when dealing with encrypted realms (issue #1625).
-    // Skipping the checks is necessary for encryption tests to run, but can result in hangs when debugging
-    // other tests.
-    if (getenv("REALM_SKIP_DEBUGGER_CHECKS"))
-        return NO;
-
     int name[] = {
         CTL_KERN,
         KERN_PROC,
@@ -328,6 +330,14 @@ BOOL RLMIsDebuggerAttached()
     }
 
     return (info.kp_proc.p_flag & P_TRACED) != 0;
+}
+
+BOOL RLMIsInRunLoop() {
+    if (auto mode = CFRunLoopCopyCurrentMode(CFRunLoopGetCurrent())) {
+        CFRelease(mode);
+        return true;
+    }
+    return false;
 }
 
 id RLMMixedToObjc(realm::Mixed const& mixed) {

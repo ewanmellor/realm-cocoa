@@ -91,6 +91,32 @@ extern "C" {
     [NSFileManager.defaultManager setAttributes:@{NSFileImmutable: @NO} ofItemAtPath:RLMTestRealmPath() error:nil];
 }
 
+- (void)testReadOnlyFileInImmutableDirectory {
+    @autoreleasepool {
+        RLMRealm *realm = self.realmWithTestPath;
+        [realm beginWriteTransaction];
+        [StringObject createInRealm:realm withValue:@[@"a"]];
+        [realm commitWriteTransaction];
+    }
+
+    // Delete `*.lock` and `.note` files to simulate opening Realm in an app bundle
+    NSString *testRealmPath = RLMTestRealmPath();
+    [[NSFileManager defaultManager] removeItemAtPath:[testRealmPath stringByAppendingString:@".lock"] error:nil];
+    [[NSFileManager defaultManager] removeItemAtPath:[testRealmPath stringByAppendingString:@".note"] error:nil];
+
+    // Make parent directory immutable to simulate opening Realm in an app bundle
+    NSString *parentDirectoryOfTestRealmPath = [RLMTestRealmPath() stringByDeletingLastPathComponent];
+    [NSFileManager.defaultManager setAttributes:@{NSFileImmutable: @YES} ofItemAtPath:parentDirectoryOfTestRealmPath error:nil];
+
+    RLMRealm *realm;
+    // Read-only Realm should be opened even in immutable directory
+    XCTAssertNoThrow(realm = [self readOnlyRealmWithPath:RLMTestRealmPath() error:nil]);
+
+    [self dispatchAsyncAndWait:^{ XCTAssertNoThrow([self readOnlyRealmWithPath:RLMTestRealmPath() error:nil]); }];
+
+    [NSFileManager.defaultManager setAttributes:@{NSFileImmutable: @NO} ofItemAtPath:parentDirectoryOfTestRealmPath error:nil];
+}
+
 - (void)testReadOnlyRealmMustExist {
    XCTAssertThrows([self readOnlyRealmWithPath:RLMTestRealmPath() error:nil]);
 }
@@ -955,15 +981,19 @@ extern "C" {
     [self dispatchAsync:^{
         RLMRealm *realm = [self realmWithTestPath];
         __block bool fulfilled = false;
-        RLMNotificationToken *token = [realm addNotificationBlock:^(NSString *note, RLMRealm *realm) {
-            XCTAssertNotNil(realm, @"Realm should not be nil");
-            XCTAssertEqual(note, RLMRealmDidChangeNotification);
-            XCTAssertEqual(1U, [StringObject allObjectsInRealm:realm].count);
-            fulfilled = true;
-        }];
 
-        // notify main thread that we're ready for it to commit
-        [bgReady fulfill];
+        CFRunLoopPerformBlock(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode, ^{
+            __block RLMNotificationToken *token = [realm addNotificationBlock:^(NSString *note, RLMRealm *realm) {
+                XCTAssertNotNil(realm, @"Realm should not be nil");
+                XCTAssertEqual(note, RLMRealmDidChangeNotification);
+                XCTAssertEqual(1U, [StringObject allObjectsInRealm:realm].count);
+                fulfilled = true;
+                [realm removeNotification:token];
+            }];
+
+            // notify main thread that we're ready for it to commit
+            [bgReady fulfill];
+        });
 
         // run for two seconds or until we receive notification
         NSDate *end = [NSDate dateWithTimeIntervalSinceNow:5.0];
@@ -972,7 +1002,6 @@ extern "C" {
         }
         XCTAssertTrue(fulfilled, @"Notification should have been received");
 
-        [realm removeNotification:token];
         [bgDone fulfill];
     }];
 
@@ -985,6 +1014,22 @@ extern "C" {
     [realm commitWriteTransaction];
 
     [self waitForExpectationsWithTimeout:2.0 handler:nil];
+}
+
+- (void)testAddingNotificationOutsideOfRunLoopIsAnError {
+    [self dispatchAsyncAndWait:^{
+        RLMRealm *realm = RLMRealm.defaultRealm;
+        XCTAssertThrows([realm addNotificationBlock:^(NSString *, RLMRealm *) { }]);
+
+        CFRunLoopPerformBlock(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode, ^{
+            RLMNotificationToken *token;
+            XCTAssertNoThrow(token = [realm addNotificationBlock:^(NSString *, RLMRealm *) { }]);
+            [realm removeNotification:token];
+            CFRunLoopStop(CFRunLoopGetCurrent());
+        });
+
+        CFRunLoopRun();
+    }];
 }
 
 #pragma mark - In-memory Realms

@@ -88,14 +88,14 @@ public final class Realm {
 
     /**
     Performs actions contained within the given block inside a write transation.
-	
-    Write transactions cannot be nested, and trying to execute a write transaction 
-	on a `Realm` which is already in a write transaction will throw an exception. 
+
+    Write transactions cannot be nested, and trying to execute a write transaction
+	on a `Realm` which is already in a write transaction will throw an exception.
 	Calls to `write` from `Realm` instances in other threads will block
     until the current write transaction completes.
 
-    Before executing the write transaction, `write` updates the `Realm` to the 
-	latest Realm version, as if `refresh()` was called, and generates notifications 
+    Before executing the write transaction, `write` updates the `Realm` to the
+	latest Realm version, as if `refresh()` was called, and generates notifications
 	if applicable. This has no effect if the `Realm` was already up to date.
 
     - parameter block: The block to be executed inside a write transaction.
@@ -138,7 +138,7 @@ public final class Realm {
     }
 
     /**
-    Revert all writes made in the current write transaction and end the transaction.
+    Reverts all writes made in the current write transaction and end the transaction.
 
     This rolls back all objects in the Realm to the state they were in at the
     beginning of the write transaction, and then ends the transaction.
@@ -248,7 +248,6 @@ public final class Realm {
     - returns: The created object.
     */
     public func create<T: Object>(type: T.Type, value: AnyObject = [:], update: Bool = false) -> T {
-        // FIXME: use T.className()
         let className = (type as Object.Type).className()
         if update && schema[className]?.primaryKeyProperty == nil {
           throwRealmException("'\(className)' does not have a primary key and can not be updated")
@@ -363,7 +362,6 @@ public final class Realm {
     - returns: All objects of the given type in Realm.
     */
     public func objects<T: Object>(type: T.Type) -> Results<T> {
-        // FIXME: use T.className()
         return Results<T>(RLMGetObjects(rlmRealm, (type as Object.Type).className(), nil))
     }
 
@@ -401,7 +399,6 @@ public final class Realm {
     - returns: An object of type `type` or `nil` if an object with the given primary key does not exist.
     */
     public func objectForPrimaryKey<T: Object>(type: T.Type, key: AnyObject) -> T? {
-        // FIXME: use T.className()
         return unsafeBitCast(RLMGetObject(rlmRealm, (type as Object.Type).className(), key), Optional<T>.self)
     }
 
@@ -435,6 +432,13 @@ public final class Realm {
 
     /**
     Add a notification handler for changes in this Realm.
+
+    Notification handlers are called after each write transaction is committed,
+    either on the current thread or other threads. The block is called on the
+    same thread as they were added on, and can only be added on threads which
+    are currently within a run loop. Unless you are specifically creating and
+    running a run loop on a background thread, this normally will only be the
+    main thread.
 
     - parameter block: A block which is called to process Realm notifications.
                        It receives the following parameters:
@@ -470,10 +474,10 @@ public final class Realm {
     in this Realm on the next cycle of the run loop after the changes are
     committed.  If set to `false`, you must manually call `refresh()` on the Realm to
     update it to get the latest version.
-	
-	Note that on background threads, the run loop is not run by default and you will 
-	will need to manually call `refresh()` in order to update to the latest version,
-	even if `autorefresh` is set to `true`.
+
+    Note that by default, background threads do not have an active run loop and you
+    will need to manually call `refresh()` in order to update to the latest version,
+    even if `autorefresh` is set to `true`.
 
     Even with this enabled, you can still call `refresh()` at any time to update the
     Realm before the automatic refresh would occur.
@@ -572,7 +576,7 @@ public final class Realm {
 extension Realm: Equatable { }
 
 /// Returns whether the two realms are equal.
-public func ==(lhs: Realm, rhs: Realm) -> Bool {
+public func == (lhs: Realm, rhs: Realm) -> Bool {
     return lhs.rlmRealm == rhs.rlmRealm
 }
 

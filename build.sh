@@ -14,7 +14,7 @@ set -o pipefail
 set -e
 
 # You can override the version of the core library
-: ${REALM_CORE_VERSION:=0.94.4} # set to "current" to always use the current build
+: ${REALM_CORE_VERSION:=0.95.1} # set to "current" to always use the current build
 
 # You can override the xcmode used
 : ${XCMODE:=xcodebuild} # must be one of: xcodebuild (default), xcpretty, xctool
@@ -54,7 +54,7 @@ command:
   test-ios-devices-swift: tests Swift iOS framework on all attached iOS devices
   test-osx:             tests OS X framework
   test-osx-swift:       tests RealmSwift OS X framework
-  verify:               verifies docs, osx, osx-swift, ios-static, ios-dynamic, ios-swift, ios-device in both Debug and Release configurations
+  verify:               verifies docs, osx, osx-swift, ios-static, ios-dynamic, ios-swift, ios-device in both Debug and Release configurations, swiftlint
   docs:                 builds docs in docs/output
   examples:             builds all examples
   examples-ios:         builds all static iOS examples
@@ -88,6 +88,8 @@ xcode() {
 }
 
 xc() {
+    # Logs xcodebuild output in realtime
+    : ${NSUnbufferedIO:=YES}
     if [[ "$XCMODE" == "xcodebuild" ]]; then
         xcode "$@"
     elif [[ "$XCMODE" == "xcpretty" ]]; then
@@ -244,7 +246,7 @@ build_docs() {
 
     if [[ "$language" == "swift" ]]; then
         : ${REALM_SWIFT_VERSION:=2.1}
-        ./build.sh set-swift-version
+        sh build.sh set-swift-version
         xcodebuild_arguments="-scheme,RealmSwift"
         module="RealmSwift"
         objc=""
@@ -595,13 +597,14 @@ case "$COMMAND" in
         sh build.sh verify-ios-device-objc
         sh build.sh verify-ios-device-swift
         sh build.sh verify-watchos
+        sh build.sh verify-swiftlint
         ;;
 
     "verify-cocoapods")
         cd examples/installation
         # FIXME: tests are duplicated to work around https://github.com/realm/realm-cocoa/issues/2701
-        ./build.sh test-ios-objc-cocoapods || ./build.sh test-ios-objc-cocoapods || exit 1
-        ./build.sh test-ios-swift-cocoapods || ./build.sh test-ios-swift-cocoapods || exit 1
+        sh build.sh test-ios-objc-cocoapods || sh build.sh test-ios-objc-cocoapods || exit 1
+        sh build.sh test-ios-swift-cocoapods || sh build.sh test-ios-swift-cocoapods || exit 1
         ;;
 
     "verify-osx")
@@ -665,6 +668,11 @@ case "$COMMAND" in
         if [ $REALM_SWIFT_VERSION != '1.2' ]; then
             sh build.sh watchos-swift
         fi
+        exit 0
+        ;;
+
+    "verify-swiftlint")
+        swiftlint lint --strict
         exit 0
         ;;
 
@@ -791,6 +799,38 @@ case "$COMMAND" in
           cp Realm/ObjectStore/impl/*.hpp include/Realm
           cp Realm/ObjectStore/impl/apple/*.hpp include/Realm
           touch include/Realm/RLMPlatform.h
+        fi
+        ;;
+
+    ######################################
+    # Continuous Integration
+    ######################################
+
+    "ci-pr")
+        mkdir -p build/reports
+
+        if [ "$target" = "docs" ]; then
+            sh build.sh set-swift-version
+            sh build.sh verify-docs
+        elif [ "$target" = "swiftlint" ]; then
+            sh build.sh verify-swiftlint
+        else
+            export sha=$ghprbSourceBranch
+            export REALM_SWIFT_VERSION=$swift_version
+            export CONFIGURATION=$configuration
+            export REALM_EXTRA_BUILD_ARGUMENTS='GCC_GENERATE_DEBUGGING_SYMBOLS=NO REALM_PREFIX_HEADER=Realm/RLMPrefix.h'
+            sh build.sh prelaunch-simulator
+            # Verify that no Realm files still exist
+            ! find ~/Library/Developer/CoreSimulator/Devices/ -name '*.realm' | grep -q .
+
+            sh build.sh verify-$target | tee build/build.log | xcpretty -r junit -o build/reports/junit.xml || \
+                (echo "\n\n***\nbuild/build.log\n***\n\n" && cat build/build.log && exit 1)
+        fi
+
+        if [ "$target" = "osx" ] && [ "$configuration" = "Debug" ]; then
+          gcovr -r . -f ".*Realm.*" -e ".*Tests.*" -e ".*core.*" --xml > build/reports/coverage-report.xml
+          WS=$(pwd | sed "s/\//\\\\\//g")
+          sed -i ".bak" "s/<source>\./<source>${WS}/" build/reports/coverage-report.xml
         fi
         ;;
 
