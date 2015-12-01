@@ -155,9 +155,7 @@ BOOL RLMPropertyTypeIsNumeric(RLMPropertyType propertyType) {
                 _optional = false;
                 // get object class from type string - @"RLMArray<objectClassName>"
                 _type = RLMPropertyTypeArray;
-                _objectClassName = [[NSString alloc] initWithBytes:code + arrayPrefixLen
-                                                            length:strlen(code + arrayPrefixLen) - 2 // drop trailing >"
-                                                          encoding:NSUTF8StringEncoding];
+                _objectClassName = [RLMProperty innerTypeFromRawType:code];
 
                 Class cls = [RLMSchema classForString:_objectClassName];
                 if (!RLMIsObjectSubclass(cls)) {
@@ -166,9 +164,7 @@ BOOL RLMPropertyTypeIsNumeric(RLMPropertyType propertyType) {
             }
             else if (strncmp(code, numberPrefix, numberPrefixLen) == 0) {
                 // get number type from type string - @"NSNumber<objectClassName>"
-                NSString *numberType = [[NSString alloc] initWithBytes:code + numberPrefixLen
-                                                                length:strlen(code + numberPrefixLen) - 2 // drop trailing >"
-                                                              encoding:NSUTF8StringEncoding];
+                NSString *numberType = [RLMProperty innerTypeFromRawType:code];
 
                 if ([numberType isEqualToString:@"RLMInt"]) {
                     _type = RLMPropertyTypeInt;
@@ -214,6 +210,36 @@ BOOL RLMPropertyTypeIsNumeric(RLMPropertyType propertyType) {
             return NO;
     }
 }
+
+
+/**
+ * Parse the given raw type name and parse it to extract the inner type.
+ *
+ * These types can have generic type parameters as well as protocols,
+ * and even multiple protocols.  Those each appear separately but all
+ * are in angle brackets.  The generic type parameters are first, followed
+ * by the protocols in order.
+ *
+ * Client code may also want to use protocols in the property declaration.
+ * To support this, we follow the convention that the Realm protocol must
+ * always be last in the list.
+ *
+ * Examples follow.  Note that the raw type looks exactly as written here,
+ * including the at-sign and double-quotes.
+ *
+ * @"RLMArray<objectClassName>"
+ * @"RLMNumber<RLMInt>"
+ * @"RLMArray<Type><CallerProtocol><RLMProtocol>"
+ */
++(NSString *)innerTypeFromRawType:(const char *)type {
+    const char * last_lt = strrchr(type, '<');
+    const char * start = (last_lt == NULL ? type : last_lt + 1);
+
+    return [[NSString alloc] initWithBytes:start
+                                    length:strlen(start) - 2 // drop trailing >"
+                                  encoding:NSUTF8StringEncoding];
+}
+
 
 - (bool)parseObjcProperty:(objc_property_t)property {
     unsigned int count;
